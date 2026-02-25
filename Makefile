@@ -1,0 +1,51 @@
+.PHONY: help install train train-quick eval api classify health categories demo clean
+
+UV ?= uv
+PYTHON ?= python3
+HOST ?= 127.0.0.1
+PORT ?= 8000
+BASE_URL ?= http://$(HOST):$(PORT)
+
+help:
+	@echo "Available targets:"
+	@echo "  make install      - install project dependencies with uv"
+	@echo "  make train        - train DistilBERT and export ONNX"
+	@echo "  make train-quick  - fast training run for local smoke checks"
+	@echo "  make eval         - run hybrid threshold/weight evaluation"
+	@echo "  make api          - start FastAPI server with auto-reload"
+	@echo "  make health       - call /v1/health"
+	@echo "  make categories   - call /v1/categories"
+	@echo "  make classify     - POST examples/request.json to /v1/classify"
+	@echo "  make demo         - run health, categories, classify in sequence"
+	@echo "  make clean        - remove generated model/output artifacts"
+
+install:
+	$(UV) sync
+
+train:
+	$(UV) run $(PYTHON) train.py --export-onnx
+
+train-quick:
+	$(UV) run $(PYTHON) train.py --max-steps 50 --export-onnx
+
+eval:
+	$(UV) run $(PYTHON) evaluate_hybrid.py --max-docs 800 --holdout-k 8 --min-support 20
+
+api:
+	$(UV) run uvicorn api:app --host $(HOST) --port $(PORT) --reload
+
+health:
+	curl -sS $(BASE_URL)/v1/health | $(PYTHON) -m json.tool
+
+categories:
+	curl -sS $(BASE_URL)/v1/categories | $(PYTHON) -m json.tool
+
+classify:
+	curl -sS -X POST "$(BASE_URL)/v1/classify" \
+		-H "Content-Type: application/json" \
+		--data @examples/request.json | $(PYTHON) -m json.tool
+
+demo: health categories classify
+
+clean:
+	rm -rf onnx_model output __pycache__ .pytest_cache
