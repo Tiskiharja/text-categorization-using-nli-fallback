@@ -15,4 +15,5 @@ dependencies = [
     "optimum[onnxruntime]",
     "fastapi",
     "uvicorn",
+    "pyyaml",
 ]

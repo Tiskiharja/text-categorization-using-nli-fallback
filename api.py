@@ -7,6 +7,7 @@ import json
 import logging
 import os
 import time
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -15,25 +16,30 @@ from fastapi import FastAPI
 from optimum.onnxruntime import ORTModelForSequenceClassification
 from pydantic import BaseModel, Field
 from transformers import AutoTokenizer
+import yaml
 
 from nli_fallback import NLICategory, NLIClassifier
 
-MODEL_DIR = Path(__file__).resolve().parent / "onnx_model"
-CATEGORIES_FILE = Path(__file__).resolve().parent / "categories.json"
+PROJECT_ROOT = Path(__file__).resolve().parent
+DEFAULT_CONFIG_FILE = PROJECT_ROOT / "config.yaml"
 MODEL_VERSION = "onnx_model+hybrid_nli"
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 logger = logging.getLogger(__name__)
 
-# Configurable runtime knobs
-NLI_MODEL_NAME = os.getenv("NLI_MODEL_NAME", "MoritzLaurer/deberta-v3-base-zeroshot-v2.0")
-HYBRID_DISTIL_WEIGHT = float(os.getenv("HYBRID_DISTIL_WEIGHT", "0.6"))
-HYBRID_NLI_WEIGHT = float(os.getenv("HYBRID_NLI_WEIGHT", "0.4"))
-ENABLE_LOW_CONF_RESCORING = os.getenv("ENABLE_LOW_CONF_RESCORING", "false").lower() in {"1", "true", "yes"}
-LOW_CONF_MIN = float(os.getenv("LOW_CONF_MIN", "0.35"))
-LOW_CONF_MAX = float(os.getenv("LOW_CONF_MAX", "0.55"))
+@dataclass
+class RuntimeConfig:
+    model_dir: Path
+    categories_file: Path
+    nli_model_name: str
+    hybrid_distil_weight: float
+    hybrid_nli_weight: float
+    enable_low_conf_rescoring: bool
+    low_conf_min: float
+    low_conf_max: float
 
 # Loaded at startup
+app_config: RuntimeConfig | None = None
 model = None
 tokenizer = None
 label_map = None  # dict str -> str (index -> category name)
@@ -83,19 +89,65 @@ class CategoryInfo(BaseModel):
     hypothesis_template: str
 
 
+def _to_bool(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    return str(value).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def load_runtime_config() -> RuntimeConfig:
+    config_file = Path(os.getenv("APP_CONFIG_FILE", str(DEFAULT_CONFIG_FILE))).resolve()
+    if not config_file.is_file():
+        raise FileNotFoundError(
+            f"Config file not found: {config_file}. "
+            "Create it (example: config.yaml) or set APP_CONFIG_FILE=/path/to/config.yaml"
+        )
+
+    with open(config_file) as f:
+        raw = yaml.safe_load(f) or {}
+
+    if not isinstance(raw, dict):
+        raise ValueError("YAML config must be a mapping/object at the top level.")
+
+    cfg = RuntimeConfig(
+        model_dir=(PROJECT_ROOT / str(raw.get("model_dir", "onnx_model"))).resolve(),
+        categories_file=(PROJECT_ROOT / str(raw.get("categories_file", "categories.json"))).resolve(),
+        nli_model_name=str(raw.get("nli_model_name", "MoritzLaurer/deberta-v3-base-zeroshot-v2.0")),
+        hybrid_distil_weight=float(raw.get("hybrid_distil_weight", 0.6)),
+        hybrid_nli_weight=float(raw.get("hybrid_nli_weight", 0.4)),
+        enable_low_conf_rescoring=_to_bool(raw.get("enable_low_conf_rescoring", False)),
+        low_conf_min=float(raw.get("low_conf_min", 0.35)),
+        low_conf_max=float(raw.get("low_conf_max", 0.55)),
+    )
+
+    if cfg.low_conf_min > cfg.low_conf_max:
+        raise ValueError(f"Invalid config: low_conf_min ({cfg.low_conf_min}) > low_conf_max ({cfg.low_conf_max})")
+
+    logger.info("Loaded runtime config from %s", config_file)
+    return cfg
+
+
+def get_config() -> RuntimeConfig:
+    if app_config is None:
+        raise RuntimeError("App config not loaded yet.")
+    return app_config
+
+
 def load_model():
     global model, tokenizer, label_map
-    if not MODEL_DIR.is_dir():
+    cfg = get_config()
+    if not cfg.model_dir.is_dir():
         raise FileNotFoundError(
-            f"Model directory not found: {MODEL_DIR}. Run: uv run train.py --max-steps 50 --export-onnx"
+            f"Model directory not found: {cfg.model_dir}. Run: uv run train.py --max-steps 50 --export-onnx"
         )
-    model = ORTModelForSequenceClassification.from_pretrained(MODEL_DIR)
-    tokenizer = AutoTokenizer.from_pretrained(MODEL_DIR)
-    with open(MODEL_DIR / "label_map.json") as f:
+    model = ORTModelForSequenceClassification.from_pretrained(cfg.model_dir)
+    tokenizer = AutoTokenizer.from_pretrained(cfg.model_dir)
+    with open(cfg.model_dir / "label_map.json") as f:
         label_map = json.load(f)
 
 
 def build_category_registry() -> dict[str, dict[str, str]]:
+    cfg = get_config()
     # Start from training labels so existing behavior remains intact by default.
     registry = {}
     for label_name in label_map.values():
@@ -106,11 +158,11 @@ def build_category_registry() -> dict[str, dict[str, str]]:
             "hypothesis_template": "This article is about {label_description}.",
         }
 
-    if not CATEGORIES_FILE.is_file():
-        logger.warning("No categories file found at %s. Using label_map-derived categories only.", CATEGORIES_FILE)
+    if not cfg.categories_file.is_file():
+        logger.warning("No categories file found at %s. Using label_map-derived categories only.", cfg.categories_file)
         return registry
 
-    with open(CATEGORIES_FILE) as f:
+    with open(cfg.categories_file) as f:
         data = json.load(f)
 
     categories = data.get("categories", data) if isinstance(data, dict) else data
@@ -137,10 +189,11 @@ def build_category_registry() -> dict[str, dict[str, str]]:
 
 def load_nli_model() -> None:
     global nli_classifier, nli_error
+    cfg = get_config()
     try:
-        nli_classifier = NLIClassifier(model_name=NLI_MODEL_NAME)
+        nli_classifier = NLIClassifier(model_name=cfg.nli_model_name)
         nli_error = None
-        logger.info("Loaded NLI fallback model: %s", NLI_MODEL_NAME)
+        logger.info("Loaded NLI fallback model: %s", cfg.nli_model_name)
     except Exception as exc:
         nli_classifier = None
         nli_error = str(exc)
@@ -171,6 +224,7 @@ def _distilbert_probs(text: str) -> np.ndarray:
 
 
 def _build_nli_candidates(distil_probs: np.ndarray, include_new_categories: bool) -> list[NLICategory]:
+    cfg = get_config()
     candidates: dict[str, NLICategory] = {}
 
     if include_new_categories:
@@ -182,9 +236,9 @@ def _build_nli_candidates(distil_probs: np.ndarray, include_new_categories: bool
                     hypothesis_template=meta["hypothesis_template"],
                 )
 
-    if ENABLE_LOW_CONF_RESCORING:
+    if cfg.enable_low_conf_rescoring:
         for index, score in enumerate(distil_probs):
-            if LOW_CONF_MIN <= score <= LOW_CONF_MAX:
+            if cfg.low_conf_min <= score <= cfg.low_conf_max:
                 name = label_map[str(index)]
                 meta = category_registry.get(name, {})
                 candidates[name] = NLICategory(
@@ -198,6 +252,7 @@ def _build_nli_candidates(distil_probs: np.ndarray, include_new_categories: bool
 
 def predict_one(req: ClassifyRequest, text: str) -> tuple[list[dict[str, Any]], float]:
     """Run hybrid inference on one document. Returns (labels, elapsed_ms)."""
+    cfg = get_config()
     start = time.perf_counter()
     distil_probs = _distilbert_probs(text)
 
@@ -214,7 +269,7 @@ def predict_one(req: ClassifyRequest, text: str) -> tuple[list[dict[str, Any]], 
             final_score = float(distil_score)
             source = "distilbert"
         else:
-            final_score = float((HYBRID_DISTIL_WEIGHT * distil_score) + (HYBRID_NLI_WEIGHT * nli_score))
+            final_score = float((cfg.hybrid_distil_weight * distil_score) + (cfg.hybrid_nli_weight * nli_score))
             source = "hybrid"
 
         if final_score >= req.confidence_threshold:
@@ -260,7 +315,8 @@ app = FastAPI(title="Reuters classifier", version="1.0")
 
 @app.on_event("startup")
 def startup():
-    global category_registry
+    global app_config, category_registry
+    app_config = load_runtime_config()
     load_model()
     category_registry = build_category_registry()
     load_nli_model()
@@ -269,6 +325,7 @@ def startup():
 @app.get("/v1/health")
 def health():
     """Model status, label count, and model directory."""
+    cfg = get_config()
     new_categories_count = sum(1 for name in category_registry if _is_new_category(name))
     return {
         "status": "ok",
@@ -277,9 +334,9 @@ def health():
         "categories_count": len(category_registry),
         "new_categories_count": new_categories_count,
         "nli_loaded": nli_classifier is not None,
-        "nli_model_name": NLI_MODEL_NAME,
+        "nli_model_name": cfg.nli_model_name,
         "nli_error": nli_error,
-        "model_dir": str(MODEL_DIR),
+        "model_dir": str(cfg.model_dir),
     }
 
 

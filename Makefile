@@ -5,6 +5,7 @@ PYTHON ?= python3
 HOST ?= 127.0.0.1
 PORT ?= 8000
 BASE_URL ?= http://$(HOST):$(PORT)
+CONFIG_FILE ?= config.yaml
 REUTERS_DIR ?= reuters+21578+text+categorization+collection
 REUTERS_ARCHIVE ?= $(REUTERS_DIR)/reuters21578.tar.gz
 REUTERS_URL ?= https://archive.ics.uci.edu/static/public/137/reuters+21578+text+categorization+collection.zip
@@ -16,7 +17,7 @@ help:
 	@echo "  make train        - train DistilBERT and export ONNX"
 	@echo "  make train-quick  - fast training run for local smoke checks"
 	@echo "  make eval         - run hybrid threshold/weight evaluation"
-	@echo "  make api          - start FastAPI server with auto-reload"
+	@echo "  make api          - start FastAPI server (loads APP_CONFIG_FILE, default: config.yaml)"
 	@echo "  make health       - call /v1/health"
 	@echo "  make categories   - call /v1/categories"
 	@echo "  make classify     - POST examples/request.json to /v1/classify"
@@ -43,7 +44,7 @@ eval:
 	$(UV) run $(PYTHON) evaluate_hybrid.py --max-docs 800 --holdout-k 8 --min-support 20
 
 api:
-	$(UV) run uvicorn api:app --host $(HOST) --port $(PORT) --reload
+	APP_CONFIG_FILE="$(CONFIG_FILE)" $(UV) run uvicorn api:app --host $(HOST) --port $(PORT) --reload
 
 health:
 	curl -sS $(BASE_URL)/v1/health | $(PYTHON) -m json.tool

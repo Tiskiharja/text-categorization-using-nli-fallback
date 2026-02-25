@@ -29,7 +29,7 @@ Useful targets:
 ```bash
 uv sync
 uv run python3 train.py --max-steps 50 --export-onnx
-uv run uvicorn api:app --reload
+APP_CONFIG_FILE=config.yaml uv run uvicorn api:app --reload
 curl -X POST "http://127.0.0.1:8000/v1/classify" \
   -H "Content-Type: application/json" \
   --data @examples/request.json
@@ -37,6 +37,7 @@ curl -X POST "http://127.0.0.1:8000/v1/classify" \
 
 ## Notes
 
+- Runtime settings are loaded from `config.yaml` (or `APP_CONFIG_FILE=/path/to/file.yaml`).
 - Reuters archive is expected at: `reuters+21578+text+categorization+collection/reuters21578.tar.gz`
 - Category registry: `categories.json`
 - Main scripts: `train.py`, `api.py`, `evaluate_hybrid.py`, `nli_fallback.py`
