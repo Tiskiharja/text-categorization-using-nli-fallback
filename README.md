@@ -21,6 +21,8 @@ Useful targets:
 
 - `make train` - full training + ONNX export
 - `make eval` - hybrid threshold/weight tuning
+- `make install-dev` - install dev dependencies (pytest, coverage)
+- `make test` - run test suite with coverage
 - `make health` / `make categories` / `make classify` - API smoke checks
 - `make clean` - remove generated artifacts (`onnx_model`, `output`, caches)
 

@@ -17,3 +17,10 @@ dependencies = [
     "uvicorn",
     "pyyaml",
 ]
+
+[dependency-groups]
+dev = [
+    "httpx",
+    "pytest",
+    "pytest-cov",
+]
