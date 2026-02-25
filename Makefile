@@ -1,4 +1,4 @@
-.PHONY: help install download-data train train-quick export-nli-onnx eval api classify health categories demo clean
+.PHONY: help install install-dev test download-data train train-quick export-nli-onnx eval api classify health categories demo clean
 
 UV ?= uv
 PYTHON ?= python3
@@ -13,6 +13,8 @@ REUTERS_URL ?= https://archive.ics.uci.edu/static/public/137/reuters+21578+text+
 help:
 	@echo "Available targets:"
 	@echo "  make install      - install project dependencies with uv"
+	@echo "  make install-dev  - install project + dev dependencies (tests)"
+	@echo "  make test         - run pytest with coverage"
 	@echo "  make download-data - download Reuters-21578 archive to expected project path"
 	@echo "  make train        - train DistilBERT and export ONNX"
 	@echo "  make train-quick  - fast training run for local smoke checks"
@@ -27,6 +29,12 @@ help:
 
 install:
 	$(UV) sync
+
+install-dev:
+	$(UV) sync --group dev
+
+test:
+	$(UV) run --group dev pytest -q --cov=. --cov-report=term-missing --cov-fail-under=35
 
 download-data:
 	mkdir -p "$(REUTERS_DIR)"

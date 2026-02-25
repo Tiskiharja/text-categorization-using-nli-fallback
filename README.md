@@ -22,6 +22,8 @@ Useful targets:
 - `make train` - full training + DistilBERT ONNX + NLI ONNX export
 - `make export-nli-onnx` - export only NLI ONNX model (`onnx_nli_model/`)
 - `make eval` - hybrid threshold/weight tuning
+- `make install-dev` - install dev dependencies (pytest, coverage)
+- `make test` - run test suite with coverage
 - `make health` / `make categories` / `make classify` - API smoke checks
 - `make clean` - remove generated artifacts (`onnx_model`, `onnx_nli_model`, `output`, caches)
 
