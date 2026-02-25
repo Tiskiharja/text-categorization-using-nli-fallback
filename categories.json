@@ -1,0 +1,19 @@
+{
+  "categories": [
+    {
+      "name": "earn",
+      "description": "corporate earnings, profits, losses, or financial performance",
+      "status": "known"
+    },
+    {
+      "name": "crude",
+      "description": "crude oil production, oil prices, OPEC, or petroleum markets",
+      "status": "known"
+    },
+    {
+      "name": "cryptocurrency",
+      "description": "bitcoin, ethereum, digital assets, crypto exchanges, or blockchain markets",
+      "status": "new"
+    }
+  ]
+}

@@ -10,5 +10,9 @@
     }
   ],
   "confidence_threshold": 0.5,
-  "max_labels": 5
+  "nli_threshold": 0.4,
+  "max_labels": 5,
+  "enable_nli_fallback": true,
+  "include_new_categories": true,
+  "include_debug_scores": false
 }
