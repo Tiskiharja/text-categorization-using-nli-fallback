@@ -1,14 +1,18 @@
-.PHONY: help install train train-quick eval api classify health categories demo clean
+.PHONY: help install download-data train train-quick eval api classify health categories demo clean
 
 UV ?= uv
 PYTHON ?= python3
 HOST ?= 127.0.0.1
 PORT ?= 8000
 BASE_URL ?= http://$(HOST):$(PORT)
+REUTERS_DIR ?= reuters+21578+text+categorization+collection
+REUTERS_ARCHIVE ?= $(REUTERS_DIR)/reuters21578.tar.gz
+REUTERS_URL ?= https://archive.ics.uci.edu/static/public/137/reuters+21578+text+categorization+collection.zip
 
 help:
 	@echo "Available targets:"
 	@echo "  make install      - install project dependencies with uv"
+	@echo "  make download-data - download Reuters-21578 archive to expected project path"
 	@echo "  make train        - train DistilBERT and export ONNX"
 	@echo "  make train-quick  - fast training run for local smoke checks"
 	@echo "  make eval         - run hybrid threshold/weight evaluation"
@@ -21,6 +25,13 @@ help:
 
 install:
 	$(UV) sync
+
+download-data:
+	mkdir -p "$(REUTERS_DIR)"
+	curl -fL "$(REUTERS_URL)" -o "$(REUTERS_DIR)/reuters21578.zip"
+	unzip -o "$(REUTERS_DIR)/reuters21578.zip" -d "$(REUTERS_DIR)"
+	test -f "$(REUTERS_ARCHIVE)"
+	@echo "Reuters archive ready at $(REUTERS_ARCHIVE)"
 
 train:
 	$(UV) run $(PYTHON) train.py --export-onnx
