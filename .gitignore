@@ -1,0 +1,30 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+# Data
+data/
+reuters+21578+text+categorization+collection/
+,/
+
+# Model artifacts
+onnx_model/
+output/
+*.onnx
+*.safetensors
+*.pt
+*.pth
+*.bin
+
+# OS files
+.DS_Store
+
+# Lock files
+uv.lock

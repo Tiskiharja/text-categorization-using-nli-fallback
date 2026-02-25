@@ -1,0 +1,14 @@
+{
+  "documents": [
+    {
+      "id": "doc-1",
+      "text": "Crude oil prices rose after OPEC announced production cuts."
+    },
+    {
+      "id": "doc-2",
+      "text": "The central bank hinted at further interest rate hikes to curb inflation."
+    }
+  ],
+  "confidence_threshold": 0.5,
+  "max_labels": 5
+}
