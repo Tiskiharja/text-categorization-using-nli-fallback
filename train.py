@@ -336,6 +336,30 @@ def export_to_onnx(
     return export_path
 
 
+def export_nli_to_onnx(
+    model_name: str = "MoritzLaurer/deberta-v3-base-zeroshot-v2.0",
+    export_dir: str = "onnx_nli_model",
+) -> Path:
+    """
+    Export the NLI model used for zero-shot fallback to ONNX.
+    Saves both ONNX graph and tokenizer into a self-contained folder.
+    """
+    from optimum.onnxruntime import ORTModelForSequenceClassification
+
+    export_path = Path(export_dir)
+    ort_model = ORTModelForSequenceClassification.from_pretrained(model_name, export=True)
+    ort_model.save_pretrained(export_path)
+    tokenizer = AutoTokenizer.from_pretrained(model_name)
+    tokenizer.save_pretrained(export_path)
+
+    onnx_files = list(export_path.glob("*.onnx"))
+    logger.info("NLI ONNX export complete: %s (%d files)", export_path, len(onnx_files))
+    for p in onnx_files:
+        size_mb = p.stat().st_size / (1024 * 1024)
+        logger.info("  %s (%.1f MB)", p.name, size_mb)
+    return export_path
+
+
 def parse_args():
     p = argparse.ArgumentParser(description="Train DistilBERT on Reuters-21578 (multi-label topic classification).")
     p.add_argument(
@@ -365,11 +389,44 @@ def parse_args():
         default=False,
         help="Export trained model to ONNX format after training (saved to onnx_model/).",
     )
+    p.add_argument(
+        "--export-nli-onnx",
+        action="store_true",
+        default=False,
+        help="Export NLI fallback model to ONNX format (saved to onnx_nli_model/).",
+    )
+    p.add_argument(
+        "--nli-model-name",
+        type=str,
+        default="MoritzLaurer/deberta-v3-base-zeroshot-v2.0",
+        help="Model name used for NLI ONNX export.",
+    )
+    p.add_argument(
+        "--nli-export-dir",
+        type=str,
+        default="onnx_nli_model",
+        help="Output directory for NLI ONNX export.",
+    )
+    p.add_argument(
+        "--export-nli-onnx-only",
+        action="store_true",
+        default=False,
+        help="Only export NLI ONNX model and skip Reuters training.",
+    )
     return p.parse_args()
 
 
 def main():
     args = parse_args()
+    if args.export_nli_onnx_only:
+        logger.info("Exporting NLI model to ONNX only")
+        export_nli_to_onnx(
+            model_name=args.nli_model_name,
+            export_dir=args.nli_export_dir,
+        )
+        logger.info("Done.")
+        return
+
     if args.max_steps > 0:
         logger.info("Quick run: training for at most %d steps", args.max_steps)
 
@@ -403,6 +460,13 @@ def main():
     if args.export_onnx:
         logger.info("Step 7: Export to ONNX")
         export_to_onnx(model, tokenizer, label_list)
+
+    if args.export_nli_onnx:
+        logger.info("Step 8: Export NLI to ONNX")
+        export_nli_to_onnx(
+            model_name=args.nli_model_name,
+            export_dir=args.nli_export_dir,
+        )
 
     logger.info("Done.")
 

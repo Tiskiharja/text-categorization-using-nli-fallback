@@ -1,4 +1,4 @@
-.PHONY: help install download-data train train-quick eval api classify health categories demo clean
+.PHONY: help install download-data train train-quick export-nli-onnx eval api classify health categories demo clean
 
 UV ?= uv
 PYTHON ?= python3
@@ -16,6 +16,7 @@ help:
 	@echo "  make download-data - download Reuters-21578 archive to expected project path"
 	@echo "  make train        - train DistilBERT and export ONNX"
 	@echo "  make train-quick  - fast training run for local smoke checks"
+	@echo "  make export-nli-onnx - export NLI fallback model to ONNX"
 	@echo "  make eval         - run hybrid threshold/weight evaluation"
 	@echo "  make api          - start FastAPI server (loads APP_CONFIG_FILE, default: config.yaml)"
 	@echo "  make health       - call /v1/health"
@@ -35,10 +36,13 @@ download-data:
 	@echo "Reuters archive ready at $(REUTERS_ARCHIVE)"
 
 train:
-	$(UV) run $(PYTHON) train.py --export-onnx
+	$(UV) run $(PYTHON) train.py --export-onnx --export-nli-onnx
 
 train-quick:
-	$(UV) run $(PYTHON) train.py --max-steps 50 --export-onnx
+	$(UV) run $(PYTHON) train.py --max-steps 50 --export-onnx --export-nli-onnx
+
+export-nli-onnx:
+	$(UV) run $(PYTHON) train.py --export-nli-onnx-only
 
 eval:
 	$(UV) run $(PYTHON) evaluate_hybrid.py --max-docs 800 --holdout-k 8 --min-support 20
@@ -60,4 +64,4 @@ classify:
 demo: health categories classify
 
 clean:
-	rm -rf onnx_model output __pycache__ .pytest_cache
+	rm -rf onnx_model onnx_nli_model output __pycache__ .pytest_cache

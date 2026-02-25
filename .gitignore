@@ -16,12 +16,16 @@ reuters+21578+text+categorization+collection/
 
 # Model artifacts
 onnx_model/
+onnx_nli_model/
 output/
 *.onnx
 *.safetensors
 *.pt
 *.pth
 *.bin
+
+# Test/cache artifacts
+.pytest_cache/
 
 # OS files
 .DS_Store

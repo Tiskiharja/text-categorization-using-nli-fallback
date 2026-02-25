@@ -1,5 +1,7 @@
 model_dir: onnx_model
 categories_file: categories.json
+nli_backend: onnx
+nli_model_dir: onnx_nli_model
 nli_model_name: MoritzLaurer/deberta-v3-base-zeroshot-v2.0
 hybrid_distil_weight: 0.6
 hybrid_nli_weight: 0.4

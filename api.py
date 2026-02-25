@@ -31,6 +31,8 @@ logger = logging.getLogger(__name__)
 class RuntimeConfig:
     model_dir: Path
     categories_file: Path
+    nli_backend: str
+    nli_model_dir: Path
     nli_model_name: str
     hybrid_distil_weight: float
     hybrid_nli_weight: float
@@ -112,6 +114,8 @@ def load_runtime_config() -> RuntimeConfig:
     cfg = RuntimeConfig(
         model_dir=(PROJECT_ROOT / str(raw.get("model_dir", "onnx_model"))).resolve(),
         categories_file=(PROJECT_ROOT / str(raw.get("categories_file", "categories.json"))).resolve(),
+        nli_backend=str(raw.get("nli_backend", "onnx")).strip().lower(),
+        nli_model_dir=(PROJECT_ROOT / str(raw.get("nli_model_dir", "onnx_nli_model"))).resolve(),
         nli_model_name=str(raw.get("nli_model_name", "MoritzLaurer/deberta-v3-base-zeroshot-v2.0")),
         hybrid_distil_weight=float(raw.get("hybrid_distil_weight", 0.6)),
         hybrid_nli_weight=float(raw.get("hybrid_nli_weight", 0.4)),
@@ -122,6 +126,8 @@ def load_runtime_config() -> RuntimeConfig:
 
     if cfg.low_conf_min > cfg.low_conf_max:
         raise ValueError(f"Invalid config: low_conf_min ({cfg.low_conf_min}) > low_conf_max ({cfg.low_conf_max})")
+    if cfg.nli_backend not in {"onnx", "torch"}:
+        raise ValueError(f"Invalid config: nli_backend must be 'onnx' or 'torch', got '{cfg.nli_backend}'")
 
     logger.info("Loaded runtime config from %s", config_file)
     return cfg
@@ -191,10 +197,31 @@ def load_nli_model() -> None:
     global nli_classifier, nli_error
     cfg = get_config()
     try:
-        nli_classifier = NLIClassifier(model_name=cfg.nli_model_name)
+        nli_classifier = NLIClassifier(
+            model_name=cfg.nli_model_name,
+            backend=cfg.nli_backend,
+            model_dir=cfg.nli_model_dir,
+        )
         nli_error = None
-        logger.info("Loaded NLI fallback model: %s", cfg.nli_model_name)
+        logger.info(
+            "Loaded NLI fallback model: backend=%s, source=%s",
+            nli_classifier.backend,
+            cfg.nli_model_dir if nli_classifier.backend == "onnx" else cfg.nli_model_name,
+        )
     except Exception as exc:
+        if cfg.nli_backend == "onnx":
+            logger.warning("ONNX NLI load failed (%s). Falling back to torch backend.", exc)
+            try:
+                nli_classifier = NLIClassifier(model_name=cfg.nli_model_name, backend="torch")
+                nli_error = None
+                logger.info("Loaded NLI fallback model: backend=torch, source=%s", cfg.nli_model_name)
+                return
+            except Exception as fallback_exc:
+                nli_classifier = None
+                nli_error = str(fallback_exc)
+                logger.warning("NLI model unavailable (%s). Running DistilBERT-only mode.", fallback_exc)
+                return
+
         nli_classifier = None
         nli_error = str(exc)
         logger.warning("NLI model unavailable (%s). Running DistilBERT-only mode.", exc)
@@ -334,6 +361,8 @@ def health():
         "categories_count": len(category_registry),
         "new_categories_count": new_categories_count,
         "nli_loaded": nli_classifier is not None,
+        "nli_backend": nli_classifier.backend if nli_classifier is not None else cfg.nli_backend,
+        "nli_model_dir": str(cfg.nli_model_dir),
         "nli_model_name": cfg.nli_model_name,
         "nli_error": nli_error,
         "model_dir": str(cfg.model_dir),
